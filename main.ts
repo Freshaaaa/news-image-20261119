@@ -1,17 +1,31 @@
+// news-image-20261119 entrypoint (Node 22, standard library only).
+// The front page is fully rendered by build-image.py into entry.png
+// (a deterministic PIL drawing of the 52 verified 19-Nov-2026 stories);
+// this program only checks the bytes and copies them to /output/entry.png.
+import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// Entry: copy the rendered front page beside this file to /output/entry.png.
-// The image is fully baked by build-image.py (deterministic PIL render of
-// the 52 verified 19-Nov-2026 stories); this program only moves the bytes.
+const PNG_MAGIC = "89504e470d0a1a0a";
+
+function fail(message: string): never {
+  throw new Error(`entry: ${message}`);
+}
+
 const here = dirname(fileURLToPath(import.meta.url));
-const src = join(here, "entry.png");
-if (!existsSync(src)) throw new Error("entry.png missing next to main.ts");
-const outDir = process.env.MAKEFUN_OUTPUT_DIR || "/output";
+const source = join(here, "entry.png");
+if (!existsSync(source)) fail("entry.png is missing next to main.ts");
+
+const bytes = readFileSync(source);
+if (bytes.subarray(0, 8).toString("hex") !== PNG_MAGIC) {
+  fail("entry.png does not start with the PNG signature");
+}
+const digest = createHash("sha256").update(bytes).digest("hex");
+
+const outDir = process.env.MAKEFUN_OUTPUT_DIR ?? "/output";
 mkdirSync(outDir, { recursive: true });
-copyFileSync(src, join(outDir, "entry.png"));
-const bytes = statSync(join(outDir, "entry.png")).size;
-const head = readFileSync(src).subarray(0, 8);
-if (head.toString("hex") !== "89504e470d0a1a0a") throw new Error("entry.png is not a PNG");
-console.log(`wrote ${join(outDir, "entry.png")} (${bytes} bytes, 1024x1024)`);
+const target = join(outDir, "entry.png");
+copyFileSync(source, target);
+if (statSync(target).size !== bytes.length) fail("copied entry.png has the wrong size");
+console.log(`wrote ${target} (${bytes.length} bytes, sha256 ${digest})`);
